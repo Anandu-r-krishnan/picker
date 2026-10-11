@@ -1,0 +1,1385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Storycraft Client Picks</title>
+<meta name="description" content="Pick the photos and videos you want in your film.">
+<meta property="og:title" content="Storycraft · Pick your photos and videos">
+<meta property="og:description" content="Tap the ones you love and send them to your editor.">
+<!--
+  Storycraft Client Picks: the page your client sees. Host this file on GitHub Pages.
+  It talks to your Google Apps Script (Code.gs) to list your Drive folder and save picks.
+  Fill in API_URL (and GOOGLE_CLIENT_ID for private galleries) in the script below.
+  Until API_URL is filled in, it runs as a demo with sample frames.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a proof sheet on a dark light-table. Slate bar pinned on top, frames grouped into rolls (one per Drive sub-folder), picks tray docked at the bottom. */
+:root{
+  --ground:#0f1515; --sheet:#161e1d; --frame:#1f2928; --line:#2b3736;
+  --ink:#e7eeec; --ink-2:#9aaba8; --ink-3:#667774;
+  --teal:#38c4b2; --on-teal:#03201c; --amber:#e8b04c; --red:#f07163;
+  --lb-bg:#090d0d; --lb-ink:#e7eeec; --lb-dim:#8c9b98; --lb-line:#232d2c; --lb-field:#121918;
+  --f-display:"Familjen Grotesk","Helvetica Neue",Arial,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --cell:168px; --r:6px;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --ground:#e8eeed; --sheet:#f8faf9; --frame:#dbe3e1; --line:#c8d3d1;
+    --ink:#122020; --ink-2:#4b5f5b; --ink-3:#768885;
+    --teal:#0b7d6f; --on-teal:#ffffff; --amber:#9a6200; --red:#bf3527;
+    color-scheme:light;
+  }
+}
+:root[data-theme="light"]{
+  --ground:#e8eeed; --sheet:#f8faf9; --frame:#dbe3e1; --line:#c8d3d1;
+  --ink:#122020; --ink-2:#4b5f5b; --ink-3:#768885;
+  --teal:#0b7d6f; --on-teal:#ffffff; --amber:#9a6200; --red:#bf3527;
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --ground:#0f1515; --sheet:#161e1d; --frame:#1f2928; --line:#2b3736;
+  --ink:#e7eeec; --ink-2:#9aaba8; --ink-3:#667774;
+  --teal:#38c4b2; --on-teal:#03201c; --amber:#e8b04c; --red:#f07163;
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html,body{background:var(--ground)}
+body{margin:0;color:var(--ink);font:400 15px/1.5 var(--f-body);-webkit-font-smoothing:antialiased}
+body.locked{overflow:hidden}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+[hidden]{display:none!important}
+.wrap{max-width:1680px;margin-inline:auto;padding-inline:clamp(16px,3vw,36px)}
+.eyebrow{font:500 11px/1.3 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+
+/* Demo strip */
+.demo{background:var(--sheet);border-bottom:1px dashed var(--line)}
+.demo .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding-block:10px;font-size:13px;color:var(--ink-2)}
+.demo .dot{width:8px;height:8px;border-radius:50%;background:var(--amber);flex:none}
+.demo p{margin:0;flex:1;min-width:220px}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex:none}
+.seg button{background:none;border:0;padding:6px 12px;color:var(--ink-2);font-size:13px}
+.seg button[aria-pressed="true"]{background:var(--frame);color:var(--ink)}
+
+/* Film edge */
+.sprockets{height:7px;background:repeating-linear-gradient(90deg,var(--line) 0 11px,transparent 11px 19px);opacity:.8}
+
+/* Intro */
+.intro .wrap{display:grid;gap:12px;padding-block:28px 20px}
+.intro h1{margin:0;font:650 clamp(30px,4.6vw,52px)/1.02 var(--f-display);letter-spacing:-.025em;text-wrap:balance}
+.intro p{margin:0;max-width:64ch;color:var(--ink-2)}
+.intro p b{color:var(--ink);font-weight:600}
+.limits{display:flex;flex-wrap:wrap;gap:8px}
+.limit-tag{font:500 12px/1 var(--f-mono);color:var(--ink-2);border:1px solid var(--line);border-radius:4px;padding:6px 8px}
+.private-line{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font:500 12px/1.4 var(--f-mono);color:var(--ink-2)}
+.private-line svg{color:var(--teal)}
+.linkish{background:none;border:0;padding:0;color:var(--teal);font:inherit;font-weight:600;text-decoration:underline;text-underline-offset:2px}
+
+/* Sticky slate bar */
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--ground);border-bottom:1px solid var(--line)}
+.bar .wrap{display:flex;flex-direction:column;gap:8px;padding-block:10px}
+.bar-row{display:flex;align-items:center;gap:12px;min-width:0}
+.scroller{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;min-width:0;flex:1;padding-block:1px}
+.scroller::-webkit-scrollbar{display:none}
+.chip{flex:none;display:inline-flex;align-items:baseline;gap:7px;padding:7px 13px;border-radius:999px;border:1px solid var(--line);background:var(--sheet);color:var(--ink-2);font-size:14px;font-weight:500;white-space:nowrap}
+.chip b{font:500 12px var(--f-mono);color:var(--ink-3);font-variant-numeric:tabular-nums}
+.chip:hover{color:var(--ink)}
+.chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--ground)}
+.chip[aria-pressed="true"] b{color:inherit;opacity:.65}
+.roll-chip{font:500 12px/1 var(--f-mono);padding:7px 10px;border-radius:4px;letter-spacing:.02em}
+.sizes{display:inline-flex;gap:2px;flex:none;border:1px solid var(--line);border-radius:8px;padding:2px;background:var(--sheet)}
+.sizes button{width:32px;height:28px;border:0;border-radius:6px;background:none;color:var(--ink-3);display:grid;place-items:center}
+.sizes button[aria-pressed="true"]{background:var(--frame);color:var(--ink)}
+
+/* Rolls and frames */
+main .wrap{padding-block:4px 140px}
+.roll{padding-top:26px;scroll-margin-top:140px}
+.roll-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;margin-bottom:12px}
+.roll-tag{font:600 11px/1 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);border:1px solid var(--ink-3);border-radius:3px;padding:4px 6px}
+.roll-head h2{margin:0;font:600 21px/1.2 var(--f-display);letter-spacing:-.01em;text-wrap:balance}
+.roll-count{font:500 12px var(--f-mono);color:var(--ink-3)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(var(--cell),42vw),1fr));gap:10px}
+
+.frame{position:relative;margin:0;background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);padding:6px 6px 0;min-width:0;transition:border-color .15s}
+.frame.on{border-color:var(--teal);box-shadow:inset 0 0 0 1px var(--teal)}
+.thumb{position:relative;display:block;width:100%;aspect-ratio:4/3;padding:0;border:0;border-radius:3px;overflow:hidden;background:var(--frame);cursor:zoom-in}
+.thumb img{display:block;width:100%;height:100%;object-fit:cover;transition:transform .2s ease}
+.thumb img[data-pending]{opacity:0}
+.frame.on .thumb img{transform:scale(.93);border-radius:2px}
+.thumb.broken::after,.pr-thumb.broken::after{content:"Preview still processing";position:absolute;inset:0;display:grid;place-items:center;padding:8px;text-align:center;font:500 11px var(--f-mono);color:var(--ink-3)}
+.pr-thumb.broken::after{content:"—"}
+.thumb.broken img,.pr-thumb.broken img{opacity:0}
+.tc{position:absolute;left:6px;bottom:6px;display:inline-flex;align-items:center;gap:5px;padding:3px 6px;border-radius:3px;background:rgba(0,0,0,.66);color:#fff;font:500 11px/1 var(--f-mono);font-variant-numeric:tabular-nums}
+.frame.on .tc{left:12px;bottom:10px}
+.pick{position:absolute;top:11px;right:11px;width:36px;height:36px;border-radius:50%;border:2px solid rgba(255,255,255,.92);background:rgba(0,0,0,.3);color:transparent;display:grid;place-items:center;padding:0;box-shadow:0 1px 4px rgba(0,0,0,.35);transition:background .15s,transform .15s}
+.pick:hover{background:rgba(0,0,0,.5)}
+.pick[aria-pressed="true"]{background:var(--teal);border-color:var(--teal);color:var(--on-teal)}
+.pick:active{transform:scale(.9)}
+.frame figcaption{display:flex;align-items:baseline;gap:8px;padding:7px 2px 8px;font:500 11px/1.2 var(--f-mono);color:var(--ink-3);min-width:0}
+.code{color:var(--ink-2);flex:none;font-variant-numeric:tabular-nums}
+.frame.on .code{color:var(--teal)}
+.fname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+.has-note{flex:none;color:var(--teal)}
+
+.empty-state{padding-block:64px;max-width:44ch;color:var(--ink-2)}
+.empty-state h2{font:600 22px/1.2 var(--f-display);color:var(--ink);margin:0 0 6px}
+
+/* Loading, errors, sign-in */
+.sk{aspect-ratio:4/3;border-radius:var(--r);background:var(--frame);animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.45}}
+.state .wrap{padding-block:72px}
+.state-card{max-width:520px;display:grid;gap:14px}
+.state-card h1{margin:0;font:650 clamp(28px,4vw,36px)/1.08 var(--f-display);letter-spacing:-.02em;text-wrap:balance}
+.state-card p{margin:0;color:var(--ink-2)}
+.who{font:500 13px/1.5 var(--f-mono);color:var(--ink-2)}
+.gsi-slot{min-height:44px;display:flex;align-items:center}
+.warn{display:grid;gap:10px;justify-items:start;border:1px solid var(--amber);border-radius:8px;padding:12px 14px;font-size:14px;color:var(--ink);background:var(--sheet)}
+.warn b{font-weight:600}
+.demo-gsi{display:inline-flex;align-items:center;gap:10px;padding:10px 18px;border-radius:4px;border:1px solid #dadce0;background:#ffffff;color:#3c4043;font:500 14px/1 var(--f-body)}
+
+/* Re-sign-in bar */
+.reauth{position:fixed;top:0;left:0;right:0;z-index:65;background:var(--sheet);border-bottom:2px solid var(--amber);padding-top:env(safe-area-inset-top,0px);box-shadow:0 10px 30px rgba(0,0,0,.25)}
+.reauth .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;padding-block:12px;font-size:14px}
+.reauth span{flex:1;min-width:220px}
+
+/* Tray */
+.tray{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--sheet);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);box-shadow:0 -10px 30px rgba(0,0,0,.18)}
+.tray .wrap{display:flex;align-items:center;gap:10px 22px;padding-block:12px;flex-wrap:wrap}
+.tally{display:flex;align-items:baseline;gap:8px}
+.tally strong{font:650 32px/1 var(--f-display);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.tally span{font-size:14px;color:var(--ink-2)}
+.tray-info{flex:1;min-width:0;display:grid;gap:6px}
+.tray-meta{font:500 12px/1.3 var(--f-mono);color:var(--ink-2)}
+.meters{display:flex;flex-wrap:wrap;gap:6px 18px}
+.meter{display:flex;align-items:center;gap:8px;font:500 11px var(--f-mono);color:var(--ink-3);font-variant-numeric:tabular-nums}
+.meter i{display:block;width:90px;height:4px;border-radius:2px;background:var(--frame);overflow:hidden}
+.meter i b{display:block;height:100%;background:var(--teal)}
+.meter.full{color:var(--amber)} .meter.full i b{background:var(--amber)}
+.sent-note{font:500 12px var(--f-mono);color:var(--teal)}
+.sent-note.stale{color:var(--amber)}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;padding:12px 18px;border:1px solid transparent;font:600 15px/1 var(--f-display);white-space:nowrap;text-decoration:none}
+.btn-primary{background:var(--teal);color:var(--on-teal)}
+.btn-primary:hover{filter:brightness(1.07)}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed;filter:none}
+.btn-ghost{background:transparent;border-color:var(--line);color:var(--ink)}
+.btn-ghost:hover{border-color:var(--ink-3)}
+.btn-sm{padding:8px 12px;font-size:13px}
+.icon-btn{width:36px;height:36px;border-radius:8px;border:1px solid transparent;background:none;color:var(--ink-2);display:grid;place-items:center;padding:0;flex:none}
+.icon-btn:hover{border-color:var(--line);color:var(--ink)}
+
+/* Lightbox (always dark, like a viewer) */
+.lb{position:fixed;inset:0;z-index:50;background:var(--lb-bg);color:var(--lb-ink);display:grid;grid-template-rows:auto minmax(0,1fr) auto;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.lb-top{display:flex;align-items:center;gap:12px;padding:10px 12px 10px 18px;font:500 12px var(--f-mono);color:var(--lb-dim);min-width:0}
+.lb-top .lb-code{color:var(--teal);font-weight:600}
+.lb-top .lb-name{color:var(--lb-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+.lb .icon-btn{color:var(--lb-ink)}
+.lb .icon-btn:hover{border-color:var(--lb-line)}
+.lb-stage{position:relative;min-height:0;display:grid;padding:0 64px}
+.lb-media{position:relative;min-height:0;display:grid;place-items:center}
+.lb-media > *{grid-area:1/1}
+.lb-media img{max-width:100%;max-height:100%;object-fit:contain}
+.lb-media img[data-pending]{opacity:0}
+.lb-media img.hi{opacity:0;transition:opacity .25s}
+.lb-media img.hi.ready{opacity:1}
+.lb-media iframe{width:100%;max-width:1280px;aspect-ratio:16/9;max-height:100%;border:0;background:#000}
+.lb-media.broken::after{content:"Preview still processing in Google Drive";font:500 12px var(--f-mono);color:var(--lb-dim)}
+.lb-play{display:inline-flex;align-items:center;gap:8px;padding:11px 14px;border-radius:6px;background:rgba(0,0,0,.75);color:#fff;font:500 13px var(--f-mono);text-decoration:none;border:1px solid rgba(255,255,255,.25)}
+a.lb-play:hover{background:rgba(0,0,0,.9)}
+.lb-nav{position:absolute;top:50%;translate:0 -50%;width:46px;height:46px;border-radius:50%;border:1px solid var(--lb-line);background:rgba(255,255,255,.06);color:var(--lb-ink);display:grid;place-items:center;padding:0;z-index:2}
+.lb-nav:hover{background:rgba(255,255,255,.12)}
+.lb-nav:disabled{opacity:.25;cursor:default}
+.lb-prev{left:10px}.lb-next{right:10px}
+.lb-bottom{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid var(--lb-line)}
+.lb-pick{display:inline-flex;align-items:center;gap:8px;padding:12px 18px;border-radius:8px;border:1px solid var(--lb-ink);background:transparent;color:var(--lb-ink);font:600 15px/1 var(--f-display);min-width:150px;justify-content:center}
+.lb-pick[aria-pressed="true"]{background:var(--teal);border-color:var(--teal);color:var(--on-teal)}
+.lb-note{flex:1;min-width:200px;background:var(--lb-field);border:1px solid var(--lb-line);border-radius:8px;color:var(--lb-ink);padding:11px 12px}
+.lb-note::placeholder{color:var(--lb-dim)}
+.lb-note:disabled{opacity:.55}
+.lb-hint{font:500 11px var(--f-mono);color:var(--lb-dim)}
+
+/* Review drawer */
+.scrim{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.5)}
+.drawer{position:fixed;top:0;right:0;bottom:0;z-index:41;width:min(480px,100%);background:var(--sheet);border-left:1px solid var(--line);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.drawer-head{display:flex;align-items:center;gap:12px;padding:14px 16px 14px 20px;border-bottom:1px solid var(--line)}
+.drawer-head h2{margin:0;flex:1;font:650 22px/1.1 var(--f-display);letter-spacing:-.015em}
+.drawer-body{flex:1;overflow:auto;padding:16px 20px 24px;display:flex;flex-direction:column;gap:22px}
+.rev-summary{font:500 12px var(--f-mono);color:var(--ink-2)}
+.pick-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.pick-row{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:12px;align-items:center;padding:6px;border:1px solid var(--line);border-radius:var(--r);background:var(--ground)}
+.pr-thumb{position:relative;padding:0;border:0;border-radius:3px;overflow:hidden;width:72px;aspect-ratio:4/3;background:var(--frame)}
+.pr-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.pr-thumb img[data-pending]{opacity:0}
+.pr-thumb .tc{left:3px;bottom:3px;padding:2px 4px;font-size:10px}
+.pr-name{font:500 12px/1.35 var(--f-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pr-name .code{color:var(--teal);margin-right:6px}
+.pr-note{font-size:13px;color:var(--ink-2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.pick-list .empty{padding:18px;color:var(--ink-3);border:1px dashed var(--line);border-radius:var(--r);text-align:center}
+.form{display:grid;gap:14px}
+.field{display:grid;gap:6px}
+.field label{font-size:13px;font-weight:600}
+.field small{color:var(--ink-3);font-size:12px}
+.field input,.field textarea{width:100%;background:var(--ground);border:1px solid var(--line);border-radius:8px;padding:11px 12px;color:var(--ink)}
+.field textarea{min-height:92px;resize:vertical}
+.field input:focus,.field textarea:focus{border-color:var(--teal);outline:none}
+.check-row{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--ink-2)}
+.check-row input{margin-top:4px;accent-color:var(--teal);width:16px;height:16px;flex:none}
+.check-row b{color:var(--ink);font-weight:600}
+.form-error{color:var(--red);font-size:14px}
+.drawer-foot{padding:14px 20px;border-top:1px solid var(--line);display:grid;gap:8px}
+.drawer-foot .btn{width:100%}
+.foot-note{font-size:12px;color:var(--ink-3);text-align:center}
+.sent{display:grid;gap:12px;padding-block:24px}
+.sent .stamp{width:56px;height:56px;border-radius:50%;background:var(--teal);color:var(--on-teal);display:grid;place-items:center}
+.sent h3{margin:0;font:650 28px/1.1 var(--f-display);letter-spacing:-.02em}
+.sent p{margin:0;color:var(--ink-2)}
+.sent .ref{font:500 13px var(--f-mono);color:var(--ink)}
+
+/* Toast */
+.toast{position:fixed;left:50%;bottom:calc(110px + env(safe-area-inset-bottom,0px));translate:-50% 0;z-index:70;max-width:calc(100% - 32px);background:var(--ink);color:var(--ground);padding:11px 15px;border-radius:8px;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+
+/* Link builder (editor side) */
+.builder .wrap{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:28px;padding-block:32px 72px;align-items:start}
+.builder h1{margin:6px 0 10px;font:650 clamp(30px,4.4vw,46px)/1.04 var(--f-display);letter-spacing:-.025em}
+.builder .lede{margin:0 0 22px;color:var(--ink-2);max-width:56ch}
+.card{background:var(--sheet);border:1px solid var(--line);border-radius:10px;padding:20px;display:grid;gap:16px}
+.card h2{margin:0;font:600 18px/1.2 var(--f-display)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.steps{margin:0;padding:0;list-style:none;display:grid;gap:14px;counter-reset:s}
+.steps li{display:grid;grid-template-columns:28px 1fr;gap:10px;color:var(--ink-2);font-size:14px}
+.steps li::before{counter-increment:s;content:counter(s);width:24px;height:24px;border-radius:50%;border:1px solid var(--ink-3);display:grid;place-items:center;font:600 12px var(--f-mono);color:var(--ink)}
+.steps b{color:var(--ink);font-weight:600}
+.status{font:500 13px/1.45 var(--f-mono);padding:10px 12px;border-radius:8px;border:1px solid var(--line);color:var(--ink-2);white-space:pre-line}
+.status.ok{border-color:var(--teal);color:var(--ink)}
+.status.err{border-color:var(--red);color:var(--red)}
+.out{display:grid;gap:6px}
+.out label{font-size:13px;font-weight:600}
+.out-row{display:flex;gap:8px;align-items:flex-start}
+.out-row input,.out-row textarea{flex:1;min-width:0;background:var(--ground);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:500 13px/1.45 var(--f-mono);color:var(--ink)}
+.out-row textarea{min-height:140px;resize:vertical;font-family:var(--f-body);font-size:14px}
+.links{display:flex;flex-wrap:wrap;gap:8px 16px}
+.links a{color:var(--teal);font-weight:600;text-decoration:none;font-size:14px}
+.links a:hover{text-decoration:underline}
+
+@media (max-width:820px){
+  .builder .wrap{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  .lb-stage{padding:0}
+  .lb-nav{width:40px;height:40px}
+  .lb-hint{display:none}
+  .pick{width:34px;height:34px;top:10px;right:10px}
+  .tally strong{font-size:28px}
+  .tray .btn{flex:1}
+  .row2{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion: reduce){
+  *{transition:none!important;animation:none!important;scroll-behavior:auto!important}
+}
+</style>
+</head>
+<body>
+
+<div class="demo" id="demo" hidden>
+  <div class="wrap">
+    <span class="dot" aria-hidden="true"></span>
+    <p>Sample gallery with placeholder frames. Once API_URL is filled in, this page shows the files in your Drive folder.</p>
+    <div class="seg" role="group" aria-label="Preview">
+      <button type="button" data-demo="client" aria-pressed="true">Client view</button>
+      <button type="button" data-demo="signin" aria-pressed="false">Sign-in screen</button>
+      <button type="button" data-demo="builder" aria-pressed="false">Link builder</button>
+    </div>
+  </div>
+</div>
+
+<div class="reauth" id="reauth" hidden role="alert">
+  <div class="wrap">
+    <span>Your Google sign-in has expired. Sign in again to keep going. Your picks are saved.</span>
+    <div class="gsi-slot" id="reauthGsi"></div>
+  </div>
+</div>
+
+<div class="sprockets" aria-hidden="true"></div>
+
+<header class="intro" id="intro"></header>
+
+<nav class="bar" id="bar" hidden aria-label="Filter frames">
+  <div class="wrap">
+    <div class="bar-row">
+      <div class="scroller" id="filters"></div>
+      <div class="sizes" id="sizes" role="group" aria-label="Thumbnail size">
+        <button type="button" data-size="s" aria-label="Small thumbnails"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><g fill="currentColor"><rect x="0" y="0" width="4" height="4" rx="1"/><rect x="5" y="0" width="4" height="4" rx="1"/><rect x="10" y="0" width="4" height="4" rx="1"/><rect x="0" y="5" width="4" height="4" rx="1"/><rect x="5" y="5" width="4" height="4" rx="1"/><rect x="10" y="5" width="4" height="4" rx="1"/><rect x="0" y="10" width="4" height="4" rx="1"/><rect x="5" y="10" width="4" height="4" rx="1"/><rect x="10" y="10" width="4" height="4" rx="1"/></g></svg></button>
+        <button type="button" data-size="m" aria-label="Medium thumbnails"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><g fill="currentColor"><rect x="0" y="0" width="6" height="6" rx="1"/><rect x="8" y="0" width="6" height="6" rx="1"/><rect x="0" y="8" width="6" height="6" rx="1"/><rect x="8" y="8" width="6" height="6" rx="1"/></g></svg></button>
+        <button type="button" data-size="l" aria-label="Large thumbnails"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="0" y="1" width="14" height="12" rx="1.5" fill="currentColor"/></svg></button>
+      </div>
+    </div>
+    <div class="bar-row" id="rollsRow" hidden>
+      <div class="scroller" id="rolls" aria-label="Jump to roll"></div>
+    </div>
+  </div>
+</nav>
+
+<main id="main"><div class="wrap" id="mainWrap"></div></main>
+
+<section class="state" id="state" hidden>
+  <div class="wrap"><div class="state-card" id="stateCard"></div></div>
+</section>
+
+<section class="builder" id="builder" hidden>
+  <div class="wrap">
+    <div>
+      <div class="eyebrow" id="bEyebrow">Storycraft ▸ Link builder</div>
+      <h1>Make a client link</h1>
+      <p class="lede">One Drive folder per project. Each sub-folder shows up as its own roll, so you can split a shoot into Haldi, Ceremony, Reception and so on.</p>
+      <ol class="steps">
+        <li><span>Upload the photos and videos to a <b>Google Drive folder</b>. Low-res JPEG exports and video proxies load fastest; keep the same file names as your originals.</span></li>
+        <li><span>Paste the folder link here. For a <b>private gallery</b>, add the client’s Gmail and keep “Make private” ticked: the folder is shared only with that account, and the client signs in with Google to open it.</span></li>
+        <li><span>For an <b>open gallery</b>, leave the Gmail empty and share the folder in Drive as <b>Anyone with the link · Viewer</b>.</span></li>
+        <li><span>Send the client link. When they press Send you get an email, a row per file in your selections sheet, and a folder of shortcuts to the picked files.</span></li>
+      </ol>
+    </div>
+    <form class="card" id="bForm" novalidate>
+      <h2>Project</h2>
+      <div class="field">
+        <label for="bFolder">Drive folder link</label>
+        <input id="bFolder" type="url" placeholder="https://drive.google.com/drive/folders/…" autocomplete="off" required>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="bName">Client first name</label>
+          <input id="bName" type="text" placeholder="Anjali" autocomplete="off" maxlength="60">
+        </div>
+        <div class="field">
+          <label for="bEmail">Client Gmail</label>
+          <input id="bEmail" type="email" placeholder="anjali@gmail.com" autocomplete="off" maxlength="120">
+        </div>
+      </div>
+      <label class="check-row" for="bPrivate">
+        <input id="bPrivate" type="checkbox" checked>
+        <span><b>Make private to this Gmail.</b> Turns off “Anyone with the link” on the folder and shares it only with the client’s Google account.</span>
+      </label>
+      <div class="row2">
+        <div class="field">
+          <label for="bMax">Photo limit</label>
+          <input id="bMax" type="number" min="0" inputmode="numeric" placeholder="No limit">
+        </div>
+        <div class="field">
+          <label for="bVmax">Video limit</label>
+          <input id="bVmax" type="number" min="0" inputmode="numeric" placeholder="No limit">
+        </div>
+      </div>
+      <button class="btn btn-primary" type="submit" id="bSubmit">Check folder and make link</button>
+      <div class="status" id="bStatus" hidden role="status"></div>
+      <div class="warn" id="bSignin" hidden>
+        <span>Sign in with your studio Google account to check or share private folders.</span>
+        <div class="gsi-slot" id="bGsi"></div>
+      </div>
+      <div id="bResult" hidden class="form">
+        <div class="out">
+          <label for="bLink">Client link</label>
+          <div class="out-row"><input id="bLink" readonly><button class="btn btn-ghost btn-sm" type="button" id="bCopyLink">Copy</button></div>
+        </div>
+        <div class="out">
+          <label for="bMsg">Message to send</label>
+          <div class="out-row"><textarea id="bMsg"></textarea><button class="btn btn-ghost btn-sm" type="button" id="bCopyMsg">Copy</button></div>
+        </div>
+        <div class="links">
+          <a id="bOpen" href="#" target="_blank" rel="noopener">Open as client</a>
+          <a id="bWa" href="#" target="_blank" rel="noopener">Send on WhatsApp</a>
+        </div>
+      </div>
+    </form>
+  </div>
+</section>
+
+<div class="tray" id="tray" hidden>
+  <div class="wrap">
+    <div class="tally"><strong id="tally">0</strong><span>picked</span></div>
+    <div class="tray-info">
+      <div class="tray-meta" id="trayMeta"></div>
+      <div class="meters" id="meters"></div>
+      <div class="sent-note" id="sentNote" hidden></div>
+    </div>
+    <button class="btn btn-primary" type="button" id="reviewBtn" disabled>Review &amp; send</button>
+  </div>
+</div>
+
+<div class="lb" id="lb" hidden role="dialog" aria-modal="true" aria-label="Frame viewer">
+  <div class="lb-top">
+    <span class="lb-code" id="lbCode"></span>
+    <span class="lb-name" id="lbName"></span>
+    <span id="lbPos"></span>
+    <button class="icon-btn" type="button" id="lbClose" aria-label="Close viewer"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+  </div>
+  <div class="lb-stage" id="lbStage">
+    <button class="lb-nav lb-prev" type="button" id="lbPrev" aria-label="Previous frame"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <div class="lb-media" id="lbMedia"></div>
+    <button class="lb-nav lb-next" type="button" id="lbNext" aria-label="Next frame"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  </div>
+  <div class="lb-bottom">
+    <button class="lb-pick" type="button" id="lbPick" aria-pressed="false">Pick this</button>
+    <input class="lb-note" id="lbNote" type="text" maxlength="300" autocomplete="off" aria-label="Note for the editor">
+    <span class="lb-hint">← → to move · P to pick · Esc to close</span>
+  </div>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" hidden role="dialog" aria-modal="true" aria-labelledby="drawerTitle">
+  <div class="drawer-head">
+    <h2 id="drawerTitle">Your picks</h2>
+    <button class="icon-btn" type="button" id="drawerClose" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+  </div>
+  <div class="drawer-body">
+    <div id="revPanel" class="form">
+      <div class="rev-summary" id="revSummary"></div>
+      <ul class="pick-list" id="revList"></ul>
+      <div class="form">
+        <div class="field">
+          <label for="fName">Your name</label>
+          <input id="fName" type="text" autocomplete="name" maxlength="80">
+        </div>
+        <div class="field">
+          <label for="fPhone">WhatsApp number</label>
+          <input id="fPhone" type="tel" autocomplete="tel" maxlength="40" placeholder="+91 …">
+        </div>
+        <div class="field">
+          <label for="fNote">Notes for the edit</label>
+          <textarea id="fNote" maxlength="2000" placeholder="Songs you like, people who must be in it, moments to skip…"></textarea>
+        </div>
+        <div class="form-error" id="formError" hidden role="alert"></div>
+      </div>
+    </div>
+    <div class="sent" id="sentPanel" hidden>
+      <div class="stamp"><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <h3 id="sentTitle">Picks sent</h3>
+      <p class="ref" id="sentRef"></p>
+      <p>You can keep changing your picks and send again. The latest version is the one we edit from.</p>
+    </div>
+  </div>
+  <div class="drawer-foot" id="drawerFoot">
+    <button class="btn btn-primary" type="button" id="sendBtn">Send picks</button>
+    <div class="foot-note" id="footNote"></div>
+  </div>
+</aside>
+
+<div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ====== 1. PASTE YOUR APPS SCRIPT WEB APP URL HERE (ends in /exec) ======================= */
+  var API_URL = 'PASTE_YOUR_WEB_APP_URL_HERE';
+  /* ====== 2. FOR PRIVATE GALLERIES: PASTE YOUR GOOGLE OAUTH CLIENT ID (ends in .apps.googleusercontent.com) */
+  var GOOGLE_CLIENT_ID = 'PASTE_YOUR_OAUTH_CLIENT_ID_HERE';
+  /* ========================================================================================== */
+
+  var PARAMS = new URLSearchParams(location.search);
+  var LIVE = /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(API_URL.trim()) && PARAMS.get('demo') !== '1';
+  var SIGNIN_READY = /\.apps\.googleusercontent\.com$/.test(GOOGLE_CLIENT_ID.trim());
+  var IN_APP = /WhatsApp|FBAN|FBAV|FB_IAB|Instagram|Line\/|Snapchat|; wv\)/i.test(navigator.userAgent || '');
+  var BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  };
+  var cssId = function (id) { return window.CSS && CSS.escape ? CSS.escape(id) : id; };
+  var REDUCE = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var ICON = {
+    check: '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    play: '<svg width="8" height="9" viewBox="0 0 8 9" aria-hidden="true"><path d="M0 0l8 4.5L0 9z" fill="currentColor"/></svg>',
+    x: '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    lock: '<svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V8a5 5 0 0 1 10 0v2h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h1zm2 0h6V8a3 3 0 0 0-6 0v2z" fill="currentColor"/></svg>',
+    g: '<svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.7c4.3-4 6.9-9.9 6.9-17.1z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.7c-2.1 1.4-4.8 2.3-8.5 2.3-6.2 0-11.5-4.1-13.4-9.8l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>'
+  };
+  var SIZES = { s: 118, m: 168, l: 260 };
+
+  var S = {
+    demo: !LIVE, studio: 'Storycraft', folderId: '', client: '', maxP: 0, maxV: 0,
+    title: '', private: false, sections: [], items: [], byId: {}, picks: {}, thumbs: {}, big: {},
+    filter: 'all', size: 'm', lb: { list: [], i: -1, from: null }, gridDirty: false,
+    form: { name: '', phone: '', note: '' }, sent: null, sending: false, infoLoaded: false,
+    token: '', email: '', exp: 0
+  };
+
+  var els = {};
+  ['demo', 'reauth', 'reauthGsi', 'intro', 'bar', 'filters', 'sizes', 'rolls', 'rollsRow', 'main', 'mainWrap', 'state', 'stateCard',
+   'builder', 'bEyebrow', 'bForm', 'bFolder', 'bName', 'bEmail', 'bPrivate', 'bMax', 'bVmax', 'bSubmit', 'bStatus', 'bSignin', 'bGsi',
+   'bResult', 'bLink', 'bMsg', 'bCopyLink', 'bCopyMsg', 'bOpen', 'bWa', 'tray', 'tally', 'trayMeta', 'meters', 'sentNote', 'reviewBtn',
+   'lb', 'lbCode', 'lbName', 'lbPos', 'lbClose', 'lbStage', 'lbPrev', 'lbNext', 'lbMedia', 'lbPick', 'lbNote',
+   'scrim', 'drawer', 'drawerClose', 'revPanel', 'revSummary', 'revList', 'fName', 'fPhone', 'fNote', 'formError',
+   'sentPanel', 'sentTitle', 'sentRef', 'drawerFoot', 'sendBtn', 'footNote', 'toast'].forEach(function (k) { els[k] = $(k); });
+
+  /* ---------- storage (per viewer, optional) ---------- */
+  var store = {
+    get: function (k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } },
+    set: function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  };
+  function draftKey() { return 'scpicks:' + (S.demo ? 'demo' : S.folderId); }
+  function saveDraft() { store.set(draftKey(), { picks: S.picks, form: S.form, sent: S.sent }); }
+
+  /* ---------- server calls ---------- */
+  function apiPost(body) {
+    // A plain-text body keeps this a "simple" request, which Apps Script accepts from any website.
+    return fetch(API_URL.trim(), { method: 'POST', redirect: 'follow', body: JSON.stringify(body) })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+  }
+  var api = {
+    info: function () { return apiPost({ action: 'info' }); },
+    gallery: function (f) { return apiPost({ action: 'gallery', f: f, token: S.token }); },
+    thumbs: function (ids, size) { return apiPost({ action: 'thumbs', f: S.folderId, ids: ids, size: size, token: S.token }); },
+    check: function (f, clientEmail, makePrivate) { return apiPost({ action: 'check', f: f, clientEmail: clientEmail, makePrivate: makePrivate, token: S.token }); },
+    save: function (payload) { return apiPost({ action: 'save', payload: payload, token: S.token }); }
+  };
+
+  /* ---------- Google sign-in ---------- */
+  var AUTH_KEY = 'scpicks:auth';
+  var gsiPromise = null, afterSignIn = null;
+  function loadAuth() {
+    try {
+      var a = JSON.parse(sessionStorage.getItem(AUTH_KEY) || 'null');
+      if (a && a.exp * 1000 > Date.now() + 60000) { S.token = a.t; S.email = a.email; S.exp = a.exp; }
+    } catch (e) {}
+  }
+  function saveAuth() { try { sessionStorage.setItem(AUTH_KEY, JSON.stringify({ t: S.token, email: S.email, exp: S.exp })); } catch (e) {} }
+  function clearAuth() {
+    S.token = ''; S.email = ''; S.exp = 0;
+    try { sessionStorage.removeItem(AUTH_KEY); } catch (e) {}
+    try { if (window.google && google.accounts) google.accounts.id.disableAutoSelect(); } catch (e) {}
+  }
+  function tokenFresh() { return !!S.token && S.exp * 1000 > Date.now() + 30000; }
+  function decodeJwt(t) {
+    try {
+      var p = t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (p.length % 4) p += '=';
+      var bin = atob(p), json = '';
+      for (var i = 0; i < bin.length; i++) json += '%' + ('00' + bin.charCodeAt(i).toString(16)).slice(-2);
+      return JSON.parse(decodeURIComponent(json));
+    } catch (e) { return {}; }
+  }
+  function loadGsi() {
+    if (gsiPromise) return gsiPromise;
+    gsiPromise = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.async = true;
+      s.onload = function () {
+        try {
+          google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID.trim(), callback: onCredential, auto_select: false, cancel_on_tap_outside: true });
+          resolve();
+        } catch (e) { reject(e); }
+      };
+      s.onerror = function () { gsiPromise = null; reject(new Error('gsi')); };
+      document.head.appendChild(s);
+    });
+    return gsiPromise;
+  }
+  function onCredential(resp) {
+    var p = decodeJwt(resp.credential);
+    S.token = resp.credential;
+    S.email = String(p.email || '').toLowerCase();
+    S.exp = Number(p.exp) || 0;
+    saveAuth();
+    var fn = afterSignIn; afterSignIn = null;
+    if (fn) fn();
+  }
+  function renderGsi(slot, then) {
+    afterSignIn = then;
+    slot.innerHTML = '';
+    if (S.demo) {
+      slot.innerHTML = '<button type="button" class="demo-gsi">' + ICON.g + ' Sign in with Google</button>';
+      slot.firstChild.addEventListener('click', function () {
+        S.email = 'anjali@gmail.com'; var fn = afterSignIn; afterSignIn = null; if (fn) fn();
+      });
+      return;
+    }
+    if (!SIGNIN_READY) {
+      slot.innerHTML = '<p class="who">Google sign-in isn’t set up on this page yet. Ask your editor to finish the setup.</p>';
+      return;
+    }
+    loadGsi().then(function () {
+      var w = Math.max(220, Math.min(340, slot.clientWidth || 300));
+      google.accounts.id.renderButton(slot, { type: 'standard', theme: 'outline', size: 'large', text: 'signin_with', shape: 'rectangular', logo_alignment: 'left', width: w });
+    }).catch(function () {
+      slot.innerHTML = '<p class="who">Couldn’t load Google sign-in. Check your connection, or open this link in Chrome or Safari.</p>';
+    });
+  }
+  function showReauth() {
+    if (!els.reauth.hidden) return;
+    els.reauth.hidden = false;
+    renderGsi(els.reauthGsi, function () {
+      els.reauth.hidden = true;
+      els.formError.hidden = true;
+      pumpThumbs();
+      if (!els.drawer.hidden) renderReviewList();
+    });
+  }
+
+  /* ---------- helpers ---------- */
+  function rollLetter(n) { var s = ''; n += 1; while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function fmtTC(ms) {
+    if (!ms) return 'Video';
+    var t = Math.round(ms / 1000), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+    return h ? h + ':' + pad(m) + ':' + pad(s) : pad(m) + ':' + pad(s);
+  }
+  function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+  function driveThumb(id, w) { return 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(id) + '&sz=w' + w; }
+  function isPending(it) { return !it.demo && S.private && !S.thumbs[it.id]; }
+  function thumbUrl(it, w) {
+    if (it.demo) return it.demo;
+    if (S.thumbs[it.id]) return S.thumbs[it.id];
+    return S.private ? BLANK : driveThumb(it.id, w);
+  }
+  function imgAttrs(it, w) {
+    return 'data-id="' + esc(it.id) + '" src="' + esc(thumbUrl(it, w)) + '"' + (isPending(it) ? ' data-pending="1"' : '');
+  }
+  function counts() {
+    var c = { p: 0, v: 0, picked: 0, runtime: 0, unknown: false, photosTotal: 0, videosTotal: 0 };
+    S.items.forEach(function (it) {
+      if (it.type === 'photo') c.photosTotal++; else c.videosTotal++;
+      if (!(it.id in S.picks)) return;
+      c.picked++;
+      if (it.type === 'photo') c.p++;
+      else { c.v++; if (it.dur) c.runtime += it.dur; else c.unknown = true; }
+    });
+    return c;
+  }
+  function picksSig() {
+    return S.items.filter(function (it) { return it.id in S.picks; })
+      .map(function (it) { return it.id + '=' + (S.picks[it.id] || ''); }).join('|');
+  }
+  var toastTimer;
+  function toast(msg) {
+    els.toast.textContent = msg; els.toast.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { els.toast.hidden = true; }, 3400);
+  }
+  function lockScroll() { document.body.classList.add('locked'); }
+  function unlockScroll() { if (els.lb.hidden && els.drawer.hidden) document.body.classList.remove('locked'); }
+  function copyText(text, btn, field) {
+    var label = btn ? btn.textContent : '';
+    var done = function () { if (btn) { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = label; }, 1500); } };
+    var fallback = function () {
+      if (field) { field.focus(); field.select(); toast('Selected. Press Ctrl+C, or long-press and choose Copy.'); }
+      else toast('Copy the link from the address bar.');
+    };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+      else fallback();
+    } catch (e) { fallback(); }
+  }
+
+  /* ---------- views ---------- */
+  function show(view) {
+    var g = view === 'gallery', loading = view === 'loading';
+    els.intro.hidden = !(g || loading);
+    els.main.hidden = !(g || loading);
+    els.bar.hidden = !g;
+    els.tray.hidden = !g;
+    els.builder.hidden = view !== 'builder';
+    els.state.hidden = view !== 'state';
+  }
+  function showLoading() {
+    els.intro.innerHTML = '<div class="wrap"><div class="eyebrow">Loading proof sheet</div><h1 style="opacity:.35">Opening your gallery…</h1></div>';
+    var sk = ''; for (var i = 0; i < 12; i++) sk += '<div class="sk"></div>';
+    els.mainWrap.innerHTML = '<div class="roll"><div class="grid">' + sk + '</div></div>';
+    show('loading');
+  }
+  function showError(msg) {
+    els.stateCard.innerHTML = '<div class="eyebrow">' + esc(S.studio) + ' ▸ Proof sheet</div><h1>This gallery can’t open right now</h1><p>' + esc(msg) + '</p>';
+    show('state');
+  }
+  function inAppWarning() {
+    return '<div class="warn"><span>You’ve opened this link inside an app. Google sign-in only works in a normal browser: tap <b>⋮</b> or the share icon and choose <b>Open in Chrome</b> or <b>Open in Safari</b>.</span>' +
+      '<button class="btn btn-ghost btn-sm" type="button" id="copyHere">Copy link</button></div>';
+  }
+  function showSignIn(code, msg) {
+    var wrong = code === 'NOT_SHARED';
+    els.stateCard.innerHTML =
+      '<div class="eyebrow">' + esc(S.studio) + ' ▸ Private gallery</div>' +
+      '<h1>' + (wrong ? 'This account doesn’t have access' : 'Sign in to see your gallery') + '</h1>' +
+      '<p>' + (wrong ? esc(msg) + ' Sign in with the Gmail address your editor shared the gallery with.'
+                     : 'This gallery is private. Sign in with the Google account your editor shared it with.') + '</p>' +
+      (IN_APP ? inAppWarning() : '') +
+      '<div class="gsi-slot" id="gsiMain"></div>' +
+      (S.email ? '<p class="who">Signed in as ' + esc(S.email) + ' · <button class="linkish" type="button" id="switchAcct">Use a different account</button></p>' : '') +
+      '<p class="who">If the button does nothing, open this link in Chrome or Safari.</p>';
+    show('state');
+    renderGsi($('gsiMain'), function () { if (S.demo) setDemoView('client'); else startGallery(); });
+    var sw = $('switchAcct');
+    if (sw) sw.addEventListener('click', function () { clearAuth(); showSignIn('SIGN_IN'); });
+    var cp = $('copyHere');
+    if (cp) cp.addEventListener('click', function () { copyText(location.href, cp); });
+  }
+
+  /* ---------- boot ---------- */
+  function boot() {
+    applySize(store.get('scpicks:size') || 'm');
+    loadAuth();
+    if (LIVE) {
+      var p = {}; PARAMS.forEach(function (v, k) { p[k] = v; });
+      start(p);
+    } else {
+      startDemo();
+    }
+  }
+
+  function start(p) {
+    S.folderId = String(p.f || p.folder || '').trim();
+    S.client = String(p.c || '').slice(0, 60);
+    S.maxP = Math.max(0, parseInt(p.max, 10) || 0);
+    S.maxV = Math.max(0, parseInt(p.vmax, 10) || 0);
+    if (!S.folderId) { openBuilder(); return; }
+    startGallery();
+  }
+
+  function startGallery() {
+    showLoading();
+    api.gallery(S.folderId)
+      .then(function (g) {
+        if (g && g.ok) { loadGallery(g); return; }
+        var code = g && g.code;
+        if (code === 'SIGN_IN') { if (S.token) clearAuth(); showSignIn('SIGN_IN'); return; }
+        if (code === 'NOT_SHARED') { showSignIn('NOT_SHARED', g.error); return; }
+        showError((g && g.error) || 'Something went wrong while opening the folder.');
+      })
+      .catch(function () { showError('Could not reach the gallery. Check your internet connection and reload the page.'); });
+  }
+
+  function loadGallery(g) {
+    S.studio = g.studio || S.studio;
+    S.title = g.title || 'Your gallery';
+    S.private = !!g.private;
+    if (g.email) S.email = g.email;
+    var many = g.sections.length > 1;
+    S.sections = g.sections.map(function (sec, si) {
+      var letter = rollLetter(si);
+      var name = sec.name || (many ? 'Main folder' : 'All frames');
+      var items = sec.items.map(function (it, ii) {
+        return Object.assign({}, it, { code: letter + '·' + String(ii + 1).padStart(3, '0'), roll: letter, rollName: name });
+      });
+      return { letter: letter, name: name, items: items };
+    });
+    S.items = [];
+    S.byId = {};
+    S.sections.forEach(function (s) { s.items.forEach(function (it) { S.items.push(it); S.byId[it.id] = it; }); });
+
+    var d = store.get(draftKey());
+    if (d) {
+      S.picks = {};
+      Object.keys(d.picks || {}).forEach(function (id) { if (S.byId[id]) S.picks[id] = String(d.picks[id] || ''); });
+      S.form = Object.assign({ name: '', phone: '', note: '' }, d.form || {});
+      S.sent = d.sent || null;
+    } else {
+      Object.keys(S.picks).forEach(function (id) { if (!S.byId[id]) delete S.picks[id]; });
+    }
+    if (!S.form.name && S.client) S.form.name = S.client;
+
+    renderIntro(); renderBar(); renderGrid(); renderTray();
+    show('gallery');
+  }
+
+  /* ---------- rendering ---------- */
+  function renderIntro() {
+    var c = counts();
+    var lim = [];
+    if (S.maxP) lim.push('<span class="limit-tag">Up to ' + plural(S.maxP, 'photo', 'photos') + '</span>');
+    if (S.maxV) lim.push('<span class="limit-tag">Up to ' + plural(S.maxV, 'video', 'videos') + '</span>');
+    var priv = (S.private || (S.demo && S.email)) && S.email
+      ? '<div class="private-line">' + ICON.lock + '<span>Private gallery · signed in as ' + esc(S.email) + '</span><button class="linkish" type="button" id="signOut">Sign out</button></div>'
+      : '';
+    els.intro.innerHTML =
+      '<div class="wrap">' +
+        '<div class="eyebrow">' + esc(S.studio) + ' <span aria-hidden="true">▸</span> Proof sheet <span aria-hidden="true">▸</span> ' +
+          plural(c.photosTotal, 'photo', 'photos') + ' · ' + plural(c.videosTotal, 'video', 'videos') + '</div>' +
+        '<h1>' + esc(S.title) + '</h1>' +
+        '<p>' + (S.client ? 'Hi ' + esc(S.client) + '. ' : '') +
+          'Tap the circle on every photo and video you want in your film. Tap a frame to see it larger. When you’re done, press <b>Review &amp; send</b>.</p>' +
+        (lim.length ? '<div class="limits">' + lim.join('') + '</div>' : '') +
+        priv +
+      '</div>';
+  }
+
+  function renderBar() {
+    var c = counts();
+    var f = [['all', 'All', S.items.length], ['photo', 'Photos', c.photosTotal], ['video', 'Videos', c.videosTotal], ['picked', 'Picked', c.picked]];
+    els.filters.innerHTML = f.filter(function (x) { return x[0] === 'all' || x[0] === 'picked' || x[2] > 0; })
+      .map(function (x) { return '<button class="chip" type="button" data-filter="' + x[0] + '" aria-pressed="' + (S.filter === x[0]) + '">' + x[1] + ' <b>' + x[2] + '</b></button>'; }).join('');
+    els.rollsRow.hidden = S.sections.length < 2;
+    els.rolls.innerHTML = S.sections.length < 2 ? '' : S.sections.map(function (s) {
+      return '<button class="chip roll-chip" type="button" data-roll="' + s.letter + '">' + s.letter + ' · ' + esc(s.name) + '</button>';
+    }).join('');
+  }
+
+  function matchesFilter(it) {
+    switch (S.filter) {
+      case 'photo': return it.type === 'photo';
+      case 'video': return it.type === 'video';
+      case 'picked': return it.id in S.picks;
+      default: return true;
+    }
+  }
+  function visibleItems() { return S.items.filter(matchesFilter); }
+
+  function frameHtml(it) {
+    var on = it.id in S.picks, note = on && S.picks[it.id];
+    return '<figure class="frame' + (on ? ' on' : '') + '" data-id="' + esc(it.id) + '">' +
+      '<button class="thumb" type="button" data-act="open" aria-label="View ' + esc(it.name) + '">' +
+        '<img loading="lazy" decoding="async" alt="" ' + imgAttrs(it, 600) + '>' +
+        (it.type === 'video' ? '<span class="tc">' + ICON.play + fmtTC(it.dur) + '</span>' : '') +
+      '</button>' +
+      '<button class="pick" type="button" data-act="pick" aria-pressed="' + on + '" aria-label="' + (on ? 'Remove ' : 'Pick ') + esc(it.name) + '">' + ICON.check + '</button>' +
+      '<figcaption><span class="code">' + it.code + '</span><span class="fname">' + esc(it.name) + '</span>' +
+        '<span class="has-note"' + (note ? '' : ' hidden') + '>note</span></figcaption>' +
+    '</figure>';
+  }
+
+  function renderGrid() {
+    S.gridDirty = false;
+    var html = '';
+    S.sections.forEach(function (sec) {
+      var items = sec.items.filter(matchesFilter);
+      if (!items.length) return;
+      var p = items.filter(function (i) { return i.type === 'photo'; }).length, v = items.length - p;
+      var cnt = [p ? plural(p, 'photo', 'photos') : '', v ? plural(v, 'video', 'videos') : ''].filter(Boolean).join(' · ');
+      html += '<section class="roll" id="roll-' + sec.letter + '">' +
+        '<div class="roll-head"><span class="roll-tag">Roll ' + sec.letter + '</span><h2>' + esc(sec.name) + '</h2><span class="roll-count">' + cnt + '</span></div>' +
+        '<div class="grid">' + items.map(frameHtml).join('') + '</div></section>';
+    });
+    if (!html) {
+      html = S.filter === 'picked'
+        ? '<div class="empty-state"><h2>Nothing picked yet</h2><p>Tap the circle on a frame to add it here.</p></div>'
+        : '<div class="empty-state"><h2>This folder is empty</h2><p>No photos or videos were found. Ask your editor to check the Drive folder.</p></div>';
+    }
+    els.mainWrap.innerHTML = html;
+    observeThumbs();
+  }
+
+  function syncFrame(id) {
+    var f = els.mainWrap.querySelector('.frame[data-id="' + cssId(id) + '"]');
+    if (!f) return;
+    var it = S.byId[id], on = id in S.picks;
+    f.classList.toggle('on', on);
+    var b = f.querySelector('.pick');
+    b.setAttribute('aria-pressed', on);
+    b.setAttribute('aria-label', (on ? 'Remove ' : 'Pick ') + it.name);
+    f.querySelector('.has-note').hidden = !(on && S.picks[id]);
+  }
+
+  function renderTray() {
+    var c = counts();
+    els.tally.textContent = c.picked;
+    var parts = [plural(c.p, 'photo', 'photos'), plural(c.v, 'video', 'videos')];
+    if (c.v) parts.push((c.runtime ? fmtTC(c.runtime) : '00:00') + (c.unknown ? '+' : '') + ' of video');
+    els.trayMeta.textContent = parts.join(' · ');
+    var m = '';
+    function meter(n, max, label) {
+      var pct = Math.min(100, Math.round(n / max * 100));
+      return '<span class="meter' + (n >= max ? ' full' : '') + '"><i><b style="width:' + pct + '%"></b></i>' + n + '/' + max + ' ' + label + '</span>';
+    }
+    if (S.maxP) m += meter(c.p, S.maxP, 'photos');
+    if (S.maxV) m += meter(c.v, S.maxV, 'videos');
+    els.meters.innerHTML = m;
+    els.meters.hidden = !m;
+    els.reviewBtn.disabled = c.picked === 0 && !S.sent;
+    if (S.sent) {
+      var stale = S.sent.sig !== picksSig();
+      els.sentNote.hidden = false;
+      els.sentNote.classList.toggle('stale', stale);
+      els.sentNote.textContent = stale ? 'Changes since you last sent · send again to update' : 'Sent · ref ' + S.sent.ref;
+    } else {
+      els.sentNote.hidden = true;
+    }
+  }
+
+  /* ---------- private thumbnails (fetched in batches through Apps Script) ---------- */
+  var tq = [], tqSet = {}, tBusy = {}, tActive = 0, tTimer = null, io = null;
+  function observeThumbs() {
+    if (!S.private) return;
+    if (!('IntersectionObserver' in window)) {
+      Array.prototype.forEach.call(els.mainWrap.querySelectorAll('img[data-pending]'), function (img) { requestThumb(img.dataset.id); });
+      return;
+    }
+    if (!io) {
+      io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) { if (en.isIntersecting) { io.unobserve(en.target); requestThumb(en.target.dataset.id); } });
+      }, { rootMargin: '700px 0px' });
+    }
+    Array.prototype.forEach.call(els.mainWrap.querySelectorAll('img[data-pending]'), function (img) { io.observe(img); });
+  }
+  function requestThumb(id) {
+    if (!S.private || !id || S.thumbs[id] || tBusy[id] || tqSet[id]) return;
+    tq.push(id); tqSet[id] = 1;
+    clearTimeout(tTimer); tTimer = setTimeout(pumpThumbs, 40);
+  }
+  function pumpThumbs() {
+    if (!els.reauth.hidden) return;
+    while (tActive < 3 && tq.length) {
+      var ids = tq.splice(0, 20);
+      ids.forEach(function (id) { delete tqSet[id]; tBusy[id] = 1; });
+      tActive++;
+      (function (ids) {
+        api.thumbs(ids, 480).then(function (r) {
+          if (r && r.code === 'SIGN_IN') { ids.forEach(function (id) { tq.push(id); tqSet[id] = 1; }); showReauth(); return; }
+          var m = (r && r.thumbs) || {};
+          ids.forEach(function (id) { if (m[id]) { S.thumbs[id] = m[id]; applyThumb(id); } else markBroken(id); });
+        }).catch(function () { ids.forEach(markBroken); })
+          .then(function () { ids.forEach(function (id) { delete tBusy[id]; }); tActive--; if (tq.length) pumpThumbs(); });
+      })(ids);
+    }
+  }
+  function applyThumb(id) {
+    Array.prototype.forEach.call(document.querySelectorAll('img[data-id="' + cssId(id) + '"]'), function (img) {
+      img.src = S.thumbs[id]; img.removeAttribute('data-pending');
+    });
+  }
+  function markBroken(id) {
+    Array.prototype.forEach.call(document.querySelectorAll('img[data-id="' + cssId(id) + '"]'), function (img) {
+      var box = img.closest('.thumb, .pr-thumb, .lb-media'); if (box) box.classList.add('broken');
+    });
+  }
+  function loadBig(id) {
+    if (S.big[id] === 'loading') return;
+    S.big[id] = 'loading';
+    api.thumbs([id], 1600).then(function (r) {
+      if (r && r.code === 'SIGN_IN') { delete S.big[id]; showReauth(); return; }
+      var src = r && r.thumbs && r.thumbs[id];
+      if (!src) { delete S.big[id]; return; }
+      S.big[id] = src;
+      if (!els.lb.hidden && currentId() === id) {
+        var hi = document.createElement('img');
+        hi.className = 'hi'; hi.alt = ''; hi.src = src;
+        els.lbMedia.appendChild(hi); attachHi(hi);
+      }
+    }).catch(function () { delete S.big[id]; });
+  }
+
+  /* ---------- picking ---------- */
+  function togglePick(id) {
+    var it = S.byId[id]; if (!it) return;
+    if (id in S.picks) {
+      delete S.picks[id];
+    } else {
+      var c = counts();
+      if (it.type === 'photo' && S.maxP && c.p >= S.maxP) { toast('You’ve picked ' + S.maxP + ' of ' + S.maxP + ' photos. Remove one to add another.'); return; }
+      if (it.type === 'video' && S.maxV && c.v >= S.maxV) { toast('You’ve picked ' + S.maxV + ' of ' + S.maxV + ' videos. Remove one to add another.'); return; }
+      S.picks[id] = '';
+    }
+    syncFrame(id); renderBar(); renderTray(); saveDraft();
+    if (!els.lb.hidden) renderLBControls();
+    if (!els.drawer.hidden) renderReviewList();
+    if (S.filter === 'picked' && !(id in S.picks)) {
+      if (els.lb.hidden && els.drawer.hidden) renderGrid(); else S.gridDirty = true;
+    }
+  }
+
+  /* ---------- lightbox ---------- */
+  function currentId() { return S.lb.list[S.lb.i]; }
+  function openLB(id, list) {
+    S.lb.list = list || visibleItems().map(function (i) { return i.id; });
+    S.lb.i = Math.max(0, S.lb.list.indexOf(id));
+    S.lb.from = document.activeElement;
+    els.lb.hidden = false; lockScroll();
+    renderLB();
+    els.lbClose.focus();
+  }
+  function closeLB() {
+    els.lb.hidden = true; els.lbMedia.innerHTML = '';
+    unlockScroll();
+    if (S.gridDirty && els.drawer.hidden) renderGrid();
+    if (S.lb.from && document.contains(S.lb.from)) S.lb.from.focus();
+  }
+  function step(d) {
+    var n = S.lb.i + d;
+    if (n < 0 || n >= S.lb.list.length) return;
+    S.lb.i = n; renderLB();
+  }
+  function attachHi(hi) {
+    var ready = function () { hi.classList.add('ready'); var lo = els.lbMedia.querySelector('img.lo'); if (lo) lo.style.visibility = 'hidden'; };
+    if (hi.complete && hi.naturalWidth) ready(); else hi.addEventListener('load', ready, { once: true });
+    hi.addEventListener('error', function () { hi.remove(); }, { once: true });
+  }
+  function renderLB() {
+    var it = S.byId[currentId()]; if (!it) { closeLB(); return; }
+    els.lbCode.textContent = it.code;
+    els.lbName.textContent = it.name;
+    els.lbPos.textContent = (S.lb.i + 1) + ' / ' + S.lb.list.length;
+    els.lbMedia.classList.remove('broken');
+    var html = '';
+    if (it.type === 'photo') {
+      html = '<img class="lo" alt="" ' + imgAttrs(it, 600) + '>';
+      if (!it.demo && !S.private) html += '<img class="hi" alt="' + esc(it.name) + '" src="' + esc(driveThumb(it.id, 2000)) + '">';
+      if (!it.demo && S.private && S.big[it.id] && S.big[it.id] !== 'loading') html += '<img class="hi" alt="" src="' + S.big[it.id] + '">';
+    } else if (it.demo) {
+      html = '<img alt="" src="' + esc(it.demo) + '"><span class="lb-play">' + ICON.play + ' Video plays here from Google Drive · ' + fmtTC(it.dur) + '</span>';
+    } else if (S.private) {
+      // Private videos play in Google Drive itself, where the client is signed in.
+      html = '<img class="lo" alt="" ' + imgAttrs(it, 600) + '>' +
+        '<a class="lb-play" href="https://drive.google.com/file/d/' + encodeURIComponent(it.id) + '/view" target="_blank" rel="noopener">' + ICON.play + ' Play in Google Drive · ' + fmtTC(it.dur) + '</a>';
+    } else {
+      html = '<iframe src="https://drive.google.com/file/d/' + encodeURIComponent(it.id) + '/preview" allow="autoplay; fullscreen" allowfullscreen title="' + esc(it.name) + '"></iframe>';
+    }
+    els.lbMedia.innerHTML = html;
+    var hi = els.lbMedia.querySelector('img.hi');
+    if (hi) attachHi(hi);
+    if (isPending(it)) requestThumb(it.id);
+    if (S.private && it.type === 'photo' && !it.demo && !S.big[it.id]) loadBig(it.id);
+    els.lbPrev.disabled = S.lb.i === 0;
+    els.lbNext.disabled = S.lb.i === S.lb.list.length - 1;
+    var next = S.byId[S.lb.list[S.lb.i + 1]];
+    if (next && next.type === 'photo' && !next.demo) {
+      if (S.private) requestThumb(next.id);
+      else { var pre = new Image(); pre.src = driveThumb(next.id, 2000); }
+    }
+    renderLBControls();
+  }
+  function renderLBControls() {
+    var it = S.byId[currentId()]; if (!it) return;
+    var on = it.id in S.picks;
+    els.lbPick.setAttribute('aria-pressed', on);
+    els.lbPick.innerHTML = on ? ICON.check + ' Picked' : 'Pick this ' + (it.type === 'video' ? 'video' : 'photo');
+    els.lbNote.disabled = !on;
+    if (document.activeElement !== els.lbNote) els.lbNote.value = on ? (S.picks[it.id] || '') : '';
+    els.lbNote.placeholder = on ? 'Note for the editor, e.g. “use this for the opening”' : 'Pick this to add a note';
+  }
+
+  /* ---------- review drawer ---------- */
+  function openReview() {
+    els.fName.value = S.form.name; els.fPhone.value = S.form.phone; els.fNote.value = S.form.note;
+    els.formError.hidden = true;
+    els.revPanel.hidden = false; els.sentPanel.hidden = true; els.drawerFoot.hidden = false;
+    renderReviewList();
+    els.scrim.hidden = false; els.drawer.hidden = false; lockScroll();
+    els.drawerClose.focus();
+  }
+  function closeReview() {
+    els.drawer.hidden = true; els.scrim.hidden = true;
+    unlockScroll();
+    if (S.gridDirty) renderGrid();
+    els.reviewBtn.focus();
+  }
+  function renderReviewList() {
+    var picked = S.items.filter(function (it) { return it.id in S.picks; });
+    var c = counts();
+    els.revSummary.textContent = plural(c.p, 'photo', 'photos') + ' · ' + plural(c.v, 'video', 'videos') +
+      (c.v ? ' · ' + fmtTC(c.runtime) + (c.unknown ? '+' : '') + ' of video' : '');
+    els.revList.innerHTML = picked.length ? picked.map(function (it) {
+      var note = S.picks[it.id];
+      return '<li class="pick-row" data-id="' + esc(it.id) + '">' +
+        '<button class="pr-thumb" type="button" data-act="view" aria-label="View ' + esc(it.name) + '"><img alt="" ' + imgAttrs(it, 240) + '>' +
+          (it.type === 'video' ? '<span class="tc">' + fmtTC(it.dur) + '</span>' : '') + '</button>' +
+        '<div style="min-width:0"><div class="pr-name"><span class="code">' + it.code + '</span>' + esc(it.name) + '</div>' +
+          (note ? '<div class="pr-note">“' + esc(note) + '”</div>' : '') + '</div>' +
+        '<button class="icon-btn" type="button" data-act="remove" aria-label="Remove ' + esc(it.name) + '">' + ICON.x + '</button>' +
+      '</li>';
+    }).join('') : '<li class="empty">Nothing picked yet. Close this and tap the circle on a frame.</li>';
+    picked.forEach(function (it) { if (isPending(it)) requestThumb(it.id); });
+    els.sendBtn.disabled = !picked.length || S.sending;
+    els.sendBtn.textContent = S.sending ? 'Sending…' : (S.sent ? 'Send updated picks' : 'Send ' + plural(picked.length, 'pick', 'picks'));
+    els.footNote.textContent = S.sent
+      ? 'Last sent ' + new Date(S.sent.at).toLocaleString([], { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) + ' · ref ' + S.sent.ref
+      : 'Goes straight to ' + S.studio + (S.private && S.email ? ', from ' + S.email : '') + '.';
+  }
+  function formError(msg) { els.formError.textContent = msg; els.formError.hidden = false; }
+
+  function send() {
+    if (S.sending) return;
+    var name = els.fName.value.trim();
+    var picked = S.items.filter(function (it) { return it.id in S.picks; });
+    if (!picked.length) { formError('Pick at least one photo or video first.'); return; }
+    if (!name) { formError('Add your name so we know whose picks these are.'); els.fName.focus(); return; }
+    if (S.private && !S.demo && !tokenFresh()) { formError('Your sign-in has expired. Sign in again at the top, then press Send.'); showReauth(); return; }
+    els.formError.hidden = true;
+    S.sending = true; renderReviewList();
+    var payload = {
+      folderId: S.folderId, name: name, phone: els.fPhone.value.trim(), note: els.fNote.value.trim(),
+      items: picked.map(function (it) { return { id: it.id, note: S.picks[it.id] || '' }; })
+    };
+    var req = LIVE ? api.save(payload) : new Promise(function (res) {
+      setTimeout(function () {
+        var d = new Date();
+        res({ ok: true, count: picked.length, ref: String(d.getFullYear()).slice(2) + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) });
+      }, 900);
+    });
+    req.then(function (r) {
+      S.sending = false;
+      if (r && r.code === 'SIGN_IN') { renderReviewList(); formError('Your sign-in has expired. Sign in again at the top, then press Send.'); showReauth(); return; }
+      if (!r || !r.ok) { renderReviewList(); formError((r && r.error) || 'Could not send your picks. Try again in a moment.'); return; }
+      S.sent = { ref: r.ref, count: r.count, at: Date.now(), sig: picksSig() };
+      saveDraft(); renderTray();
+      els.sentTitle.textContent = plural(r.count, 'pick', 'picks') + ' sent';
+      els.sentRef.textContent = 'Ref ' + r.ref + (S.demo ? ' · demo, nothing was sent' : '');
+      els.revPanel.hidden = true; els.drawerFoot.hidden = true; els.sentPanel.hidden = false;
+    }).catch(function () {
+      S.sending = false; renderReviewList();
+      formError('Could not reach the server. Check your internet connection and press Send again.');
+    });
+  }
+
+  /* ---------- link builder ---------- */
+  function parseFolderId(v) {
+    v = String(v || '').trim();
+    var m = v.match(/\/folders\/([\w-]{10,})/) || v.match(/[?&]id=([\w-]{10,})/);
+    if (m) return m[1];
+    return /^[\w-]{15,}$/.test(v) ? v : '';
+  }
+  function setStatus(msg, kind) {
+    els.bStatus.hidden = false; els.bStatus.textContent = msg;
+    els.bStatus.className = 'status' + (kind ? ' ' + kind : '');
+  }
+  function openBuilder() {
+    els.bEyebrow.textContent = S.studio + ' ▸ Link builder';
+    show('builder');
+    if (LIVE && !S.infoLoaded) {
+      S.infoLoaded = true;
+      api.info().then(function (r) {
+        if (r && r.ok) { S.studio = r.studio || S.studio; els.bEyebrow.textContent = S.studio + ' ▸ Link builder'; }
+      }).catch(function () {});
+    }
+  }
+  function demoCheck(email, makePrivate) {
+    var g = demoGallery(), p = 0, v = 0;
+    g.sections.forEach(function (s) { s.items.forEach(function (it) { if (it.type === 'photo') p++; else v++; }); });
+    var priv = !!(email && makePrivate);
+    return Promise.resolve({ ok: true, studio: g.studio, title: g.title, photos: p, videos: v, rolls: g.sections.length, private: priv, sharedWith: email ? [email] : [], signedInAs: 'you@storycraft.in' });
+  }
+  function buildLink(e) {
+    if (e) e.preventDefault();
+    var id = parseFolderId(els.bFolder.value);
+    var email = els.bEmail.value.trim().toLowerCase();
+    var makePrivate = !!email && els.bPrivate.checked;
+    els.bResult.hidden = true;
+    if (!id) { setStatus('Paste the folder link from Google Drive. It looks like drive.google.com/drive/folders/…', 'err'); return; }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setStatus('That client email address doesn’t look right.', 'err'); return; }
+    if (makePrivate && LIVE && !SIGNIN_READY) { setStatus('Private galleries need Google sign-in. Add your OAuth Client ID to index.html and Code.gs first (see SETUP.md).', 'err'); return; }
+    setStatus(makePrivate ? 'Sharing the folder with ' + email + ' and checking it…' : 'Checking the folder…');
+    els.bSubmit.disabled = true;
+    var req = LIVE ? api.check(id, email, makePrivate) : demoCheck(email, makePrivate);
+    req.then(function (g) {
+      els.bSubmit.disabled = false;
+      if (!g || !g.ok) {
+        if (g && g.code === 'SIGN_IN') {
+          if (S.token) clearAuth();
+          setStatus(g.error, 'err');
+          els.bSignin.hidden = false;
+          renderGsi(els.bGsi, function () { els.bSignin.hidden = true; buildLink(); });
+          return;
+        }
+        setStatus((g && g.error) || 'That folder could not be opened.', 'err');
+        return;
+      }
+      els.bSignin.hidden = true;
+      if (!g.photos && !g.videos) { setStatus('Found “' + g.title + '”, but it has no photos or videos yet.', 'err'); return; }
+      var lines = ['Found “' + g.title + '”: ' + plural(g.photos, 'photo', 'photos') + ', ' + plural(g.videos, 'video', 'videos') + ' in ' + plural(g.rolls, 'roll', 'rolls') + '.'];
+      if (g.private) lines.push('Private · opens only for ' + (g.sharedWith.length ? g.sharedWith.join(', ') : 'nobody yet (add the client’s Gmail)') + ' after Google sign-in.');
+      else lines.push('Open · anyone with the link can see it.' + (email && !makePrivate ? ' Shared with ' + email + ' too.' : ''));
+      setStatus(lines.join('\n'), 'ok');
+
+      var name = els.bName.value.trim(), max = parseInt(els.bMax.value, 10) || 0, vmax = parseInt(els.bVmax.value, 10) || 0;
+      var base = LIVE ? location.origin + location.pathname : 'https://YOUR-NAME.github.io/client-picks/';
+      var link = base + '?f=' + encodeURIComponent(id) + (name ? '&c=' + encodeURIComponent(name) : '') + (max ? '&max=' + max : '') + (vmax ? '&vmax=' + vmax : '');
+      var limitTxt = max || vmax ? ' You can pick up to ' + [max ? plural(max, 'photo', 'photos') : '', vmax ? plural(vmax, 'video', 'videos') : ''].filter(Boolean).join(' and ') + '.' : '';
+      var signTxt = g.private ? '\n\nOpen the link in Chrome or Safari and sign in with ' + (email || (g.sharedWith[0] || 'the Gmail address we shared it with')) + '.' : '';
+      var msg = 'Hi ' + (name || 'there') + ', your ' + g.title + ' gallery is ready.' + signTxt +
+        '\n\nTap the circle on the photos and videos you want in your film, then press “Review & send”.' + limitTxt +
+        '\n\n' + link + '\n\n– ' + (g.studio || S.studio);
+      els.bLink.value = link; els.bMsg.value = msg;
+      els.bOpen.href = S.demo ? '#' : link;
+      els.bWa.href = 'https://wa.me/?text=' + encodeURIComponent(msg);
+      els.bResult.hidden = false;
+    }).catch(function () {
+      els.bSubmit.disabled = false;
+      setStatus('Could not reach the server. Check your connection and try again.', 'err');
+    });
+  }
+
+  /* ---------- size ---------- */
+  function applySize(sz) {
+    if (!SIZES[sz]) sz = 'm';
+    S.size = sz;
+    document.documentElement.style.setProperty('--cell', SIZES[sz] + 'px');
+    Array.prototype.forEach.call(els.sizes.querySelectorAll('button'), function (b) { b.setAttribute('aria-pressed', b.dataset.size === sz); });
+  }
+
+  /* ---------- events ---------- */
+  els.mainWrap.addEventListener('click', function (e) {
+    var act = e.target.closest('[data-act]'); if (!act) return;
+    var f = act.closest('.frame'); if (!f) return;
+    if (act.dataset.act === 'pick') togglePick(f.dataset.id);
+    else if (act.dataset.act === 'open') openLB(f.dataset.id);
+  });
+  els.intro.addEventListener('click', function (e) {
+    if (e.target.id !== 'signOut') return;
+    clearAuth();
+    if (S.demo) { renderIntro(); return; }
+    showSignIn('SIGN_IN');
+  });
+  els.filters.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-filter]'); if (!b) return;
+    S.filter = b.dataset.filter; renderBar(); renderGrid();
+    window.scrollTo({ top: Math.min(window.scrollY, els.main.offsetTop - 8), behavior: REDUCE ? 'auto' : 'smooth' });
+  });
+  els.rolls.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-roll]'); if (!b) return;
+    if (!$('roll-' + b.dataset.roll)) { S.filter = 'all'; renderBar(); renderGrid(); }
+    var t = $('roll-' + b.dataset.roll);
+    if (t) t.scrollIntoView({ behavior: REDUCE ? 'auto' : 'smooth', block: 'start' });
+  });
+  els.sizes.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-size]'); if (!b) return;
+    applySize(b.dataset.size); store.set('scpicks:size', b.dataset.size);
+  });
+  els.reviewBtn.addEventListener('click', openReview);
+
+  els.lbClose.addEventListener('click', closeLB);
+  els.lbPrev.addEventListener('click', function () { step(-1); });
+  els.lbNext.addEventListener('click', function () { step(1); });
+  els.lbPick.addEventListener('click', function () { togglePick(currentId()); });
+  els.lbNote.addEventListener('input', function () {
+    var id = currentId(); if (!(id in S.picks)) return;
+    S.picks[id] = els.lbNote.value.slice(0, 300);
+    syncFrame(id); renderTray(); saveDraft();
+    if (!els.drawer.hidden) renderReviewList();
+  });
+  var touch = null;
+  els.lbStage.addEventListener('touchstart', function (e) { touch = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }, { passive: true });
+  els.lbStage.addEventListener('touchend', function (e) {
+    if (!touch) return;
+    var dx = e.changedTouches[0].clientX - touch.x, dy = e.changedTouches[0].clientY - touch.y;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) step(dx < 0 ? 1 : -1);
+    touch = null;
+  });
+
+  els.drawerClose.addEventListener('click', closeReview);
+  els.scrim.addEventListener('click', closeReview);
+  els.revList.addEventListener('click', function (e) {
+    var act = e.target.closest('[data-act]'); if (!act) return;
+    var row = act.closest('.pick-row'); if (!row) return;
+    if (act.dataset.act === 'remove') togglePick(row.dataset.id);
+    else if (act.dataset.act === 'view') openLB(row.dataset.id, S.items.filter(function (it) { return it.id in S.picks; }).map(function (it) { return it.id; }));
+  });
+  [['fName', 'name'], ['fPhone', 'phone'], ['fNote', 'note']].forEach(function (p) {
+    els[p[0]].addEventListener('input', function () { S.form[p[1]] = els[p[0]].value; saveDraft(); });
+  });
+  els.sendBtn.addEventListener('click', send);
+
+  els.bForm.addEventListener('submit', buildLink);
+  els.bCopyLink.addEventListener('click', function () { copyText(els.bLink.value, els.bCopyLink, els.bLink); });
+  els.bCopyMsg.addEventListener('click', function () { copyText(els.bMsg.value, els.bCopyMsg, els.bMsg); });
+  els.bOpen.addEventListener('click', function (e) { if (S.demo) { e.preventDefault(); setDemoView('client'); } });
+
+  document.addEventListener('keydown', function (e) {
+    if (!els.lb.hidden) {
+      var typing = e.target === els.lbNote;
+      if (e.key === 'Escape') { e.preventDefault(); if (typing) els.lbNote.blur(); else closeLB(); }
+      else if (typing) return;
+      else if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
+      else if (e.key === 'p' || e.key === 'P' || (e.key === ' ' && e.target.tagName !== 'BUTTON')) { e.preventDefault(); togglePick(currentId()); }
+      return;
+    }
+    if (!els.drawer.hidden && e.key === 'Escape') closeReview();
+  });
+
+  // Open galleries: if a public Drive thumbnail fails (e.g. still processing), ask the server for one.
+  document.addEventListener('error', function (e) {
+    var img = e.target;
+    if (!(img instanceof HTMLImageElement) || !img.dataset.id || img.dataset.fb || img.dataset.pending) return;
+    img.dataset.fb = '1';
+    var id = img.dataset.id;
+    if (!LIVE || S.private) { markBroken(id); return; }
+    api.thumbs([id], 480).then(function (r) {
+      var src = r && r.thumbs && r.thumbs[id];
+      if (src) { S.thumbs[id] = src; applyThumb(id); } else markBroken(id);
+    }).catch(function () { markBroken(id); });
+  }, true);
+
+  /* ---------- demo mode (until API_URL is filled in) ---------- */
+  function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; var t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  function demoThumb(seed, roll) {
+    var r = rng(seed * 9301 + 49297);
+    var pals = [
+      [['#3a2416', '#c5833f', '#f6d59a'], ['#45261a', '#d7934b', '#ffe2a8'], ['#2c1d12', '#b3742e', '#f1c77c']],
+      [['#3a1622', '#a54a5f', '#f3b48a'], ['#2a1a2a', '#8c4a6e', '#f0c2a0'], ['#3d1a1a', '#b5513f', '#f7c58c']],
+      [['#141c2a', '#3f5e86', '#e7cf9a'], ['#1b1730', '#5a4a8a', '#f2d7a6'], ['#10222a', '#2f6f7d', '#efd8a2']]
+    ][roll % 3];
+    var p = pals[Math.floor(r() * pals.length)];
+    var dots = '';
+    for (var i = 0; i < 9; i++) {
+      dots += '<circle cx="' + Math.round(r() * 400) + '" cy="' + Math.round(r() * 190) + '" r="' + Math.round(8 + r() * 34) + '" fill="' + p[2] + '" opacity="' + (0.15 + r() * 0.45).toFixed(2) + '"/>';
+    }
+    var hx = Math.round(120 + r() * 160), hy = Math.round(150 + r() * 40);
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice">' +
+      '<defs><linearGradient id="g" x1="0" y1="0" x2="' + r().toFixed(2) + '" y2="1"><stop offset="0" stop-color="' + p[1] + '"/><stop offset="1" stop-color="' + p[0] + '"/></linearGradient>' +
+      '<filter id="b" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="7"/></filter></defs>' +
+      '<rect width="400" height="300" fill="url(#g)"/><g filter="url(#b)">' + dots + '</g>' +
+      '<g fill="' + p[0] + '" opacity=".78"><ellipse cx="' + hx + '" cy="' + hy + '" rx="22" ry="26"/><path d="M' + (hx - 58) + ' 300 C ' + (hx - 52) + ' ' + (hy + 40) + ', ' + (hx + 52) + ' ' + (hy + 40) + ', ' + (hx + 58) + ' 300Z"/>' +
+      (r() > 0.45 ? '<ellipse cx="' + (hx + 62) + '" cy="' + (hy + 8) + '" rx="20" ry="24"/><path d="M' + (hx + 10) + ' 300 C ' + (hx + 14) + ' ' + (hy + 46) + ', ' + (hx + 110) + ' ' + (hy + 46) + ', ' + (hx + 114) + ' 300Z"/>' : '') +
+      '</g></svg>';
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+  function demoGallery() {
+    var rolls = [
+      { name: 'Haldi', start: 102, photos: 14, videos: [['C0012.MP4', 42000], ['C0015.MP4', 95000]] },
+      { name: 'Muhurtham', start: 418, photos: 20, videos: [['C0031.MP4', 64000], ['C0033.MP4', 128000], ['C0036.MP4', 21000], ['C0040.MP4', 77000]] },
+      { name: 'Reception', start: 1206, photos: 12, videos: [['C0058.MP4', 54000], ['C0061.MP4', 189000]] }
+    ];
+    var seed = 3;
+    return {
+      ok: true, studio: 'Storycraft', title: 'Anjali & Rahul · Wedding',
+      sections: rolls.map(function (ro, ri) {
+        var items = [];
+        ro.videos.forEach(function (v, k) { items.push({ id: 'demo-' + ri + '-v' + k, name: v[0], type: 'video', dur: v[1], demo: demoThumb(++seed, ri) }); });
+        var n = ro.start;
+        for (var i = 0; i < ro.photos; i++) {
+          n += 1 + ((seed * 7 + i) % 4);
+          items.push({ id: 'demo-' + ri + '-p' + i, name: 'DSC_' + String(n).padStart(4, '0') + '.JPG', type: 'photo', demo: demoThumb(++seed, ri) });
+        }
+        return { name: ro.name, items: items };
+      })
+    };
+  }
+  function setDemoView(v) {
+    Array.prototype.forEach.call(els.demo.querySelectorAll('[data-demo]'), function (b) { b.setAttribute('aria-pressed', b.dataset.demo === v); });
+    if (v === 'builder') {
+      openBuilder();
+      if (!els.bFolder.value) {
+        els.bFolder.value = 'https://drive.google.com/drive/folders/1AbC-demoFolderId_x9Kq2';
+        els.bName.value = 'Anjali'; els.bEmail.value = 'anjali@gmail.com'; els.bMax.value = '40'; els.bVmax.value = '6';
+      }
+    } else if (v === 'signin') {
+      S.email = '';
+      showSignIn('SIGN_IN');
+    } else {
+      renderIntro();
+      show('gallery');
+    }
+    window.scrollTo(0, 0);
+  }
+  function startDemo() {
+    els.demo.hidden = false;
+    els.demo.addEventListener('click', function (e) { var b = e.target.closest('[data-demo]'); if (b) setDemoView(b.dataset.demo); });
+    S.folderId = 'demo'; S.client = 'Anjali'; S.maxP = 40; S.maxV = 6;
+    if (!store.get(draftKey())) {
+      S.picks = { 'demo-0-p2': '', 'demo-0-v1': 'Use this for the opening', 'demo-1-p5': '', 'demo-1-p6': '', 'demo-1-v1': '', 'demo-2-p3': 'Grandma has to be in the film' };
+    }
+    loadGallery(demoGallery());
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
